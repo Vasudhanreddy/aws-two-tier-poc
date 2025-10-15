@@ -1,3 +1,4 @@
+AWSTemplateFormatVersion: '2010-09-09'
 Description: |
   AWS CloudFormation Template for a two-tier Proof-of-Concept (PoC) architecture.
   This template deploys a VPC with two public and two private subnets, an EC2 Web Instance
@@ -11,57 +12,75 @@ Parameters:
     Description: CIDR block for the VPC.
   
   # --- Network Configuration Parameters ---
-  PublicSubnet1Cidr: { Type: String, Default: 10.0.1.0/24 }
-  PublicSubnet2Cidr: { Type: String, Default: 10.0.2.0/24 }
-  PrivateSubnet1Cidr: { Type: String, Default: 10.0.11.0/24 }
-  PrivateSubnet2Cidr: { Type: String, Default: 10.0.12.0/24 }
+  PublicSubnet1Cidr:
+    Type: String
+    Default: 10.0.1.0/24
+  PublicSubnet2Cidr:
+    Type: String
+    Default: 10.0.2.0/24
+  PrivateSubnet1Cidr:
+    Type: String
+    Default: 10.0.11.0/24
+  PrivateSubnet2Cidr:
+    Type: String
+    Default: 10.0.12.0/24
 
-  # --- EC2 Parameters (Frontend Web Server) ---
+  # --- EC2 Parameters ---
   InstanceType:
     Type: String
     Default: t3.micro
-    Description: EC2 instance type for the web server.
   LatestAmiId:
     Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
     Default: '/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2'
-    Description: Amazon Linux 2 AMI ID from SSM Parameter Store.
   KeyName:
     Type: AWS::EC2::KeyPair::KeyName
-    Description: Name of an existing EC2 KeyPair to enable SSH access to the Web Server.
+    Description: Name of an existing EC2 KeyPair to enable SSH access.
 
-  # --- RDS Parameters (Private Database) ---
-  DBInstanceIdentifier: { Type: String, Default: app-poc-db }
-  DBUsername: { Type: String, Default: masteruser }
+  # --- RDS Parameters ---
+  DBInstanceIdentifier:
+    Type: String
+    Default: app-poc-db
+  DBUsername:
+    Type: String
+    Default: masteruser
   DBPassword:
     Type: String
     NoEcho: true
     Description: Master password for the database.
-  DBInstanceType: { Type: String, Default: db.t3.micro }
-  DBAllocatedStorage: { Type: Number, Default: 20 }
-  DBName: { Type: String, Default: pocdb } # Added DB Name for connection
+  DBInstanceType:
+    Type: String
+    Default: db.t3.micro
+  DBAllocatedStorage:
+    Type: Number
+    Default: 20
+  DBName:
+    Type: String
+    Default: pocdb
 
-# Mappings (Used to dynamically get AZ names)
 Mappings:
   RegionMap:
     us-east-1:
       AZ1: us-east-1a
       AZ2: us-east-1b
-    # Add other regions as needed
 
 Resources:
-  # 1. VPC and Networking (Routes, Subnets, etc. remain the same)
+  # --- VPC ---
   VPC:
     Type: AWS::EC2::VPC
     Properties:
       CidrBlock: !Ref VpcCidr
       EnableDnsSupport: true
       EnableDnsHostnames: true
-      Tags: [{ Key: Name, Value: !Sub "${AWS::StackName}-VPC" }]
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-VPC"
 
   InternetGateway:
     Type: AWS::EC2::InternetGateway
     Properties:
-      Tags: [{ Key: Name, Value: !Sub "${AWS::StackName}-IGW" }]
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-IGW"
 
   AttachGateway:
     Type: AWS::EC2::VPCGatewayAttachment
@@ -69,14 +88,16 @@ Resources:
       VpcId: !Ref VPC
       InternetGatewayId: !Ref InternetGateway
 
-  # 2. Public Subnets
+  # --- Subnets ---
   PublicSubnet1:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId: !Ref VPC
       CidrBlock: !Ref PublicSubnet1Cidr
       AvailabilityZone: !Select [0, !GetAZs '']
-      Tags: [{ Key: Name, Value: !Sub "${AWS::StackName}-Public-1" }]
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-Public-1"
 
   PublicSubnet2:
     Type: AWS::EC2::Subnet
@@ -84,16 +105,19 @@ Resources:
       VpcId: !Ref VPC
       CidrBlock: !Ref PublicSubnet2Cidr
       AvailabilityZone: !Select [1, !GetAZs '']
-      Tags: [{ Key: Name, Value: !Sub "${AWS::StackName}-Public-2" }]
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-Public-2"
 
-  # 3. Private Subnets
   PrivateSubnet1:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId: !Ref VPC
       CidrBlock: !Ref PrivateSubnet1Cidr
       AvailabilityZone: !Select [0, !GetAZs '']
-      Tags: [{ Key: Name, Value: !Sub "${AWS::StackName}-Private-1" }]
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-Private-1"
 
   PrivateSubnet2:
     Type: AWS::EC2::Subnet
@@ -101,9 +125,11 @@ Resources:
       VpcId: !Ref VPC
       CidrBlock: !Ref PrivateSubnet2Cidr
       AvailabilityZone: !Select [1, !GetAZs '']
-      Tags: [{ Key: Name, Value: !Sub "${AWS::StackName}-Private-2" }]
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-Private-2"
 
-  # 4. NAT Gateway and EIP
+  # --- NAT Gateway ---
   NatGatewayEIP:
     Type: AWS::EC2::EIP
     Properties:
@@ -114,14 +140,18 @@ Resources:
     Properties:
       AllocationId: !GetAtt NatGatewayEIP.AllocationId
       SubnetId: !Ref PublicSubnet1
-      Tags: [{ Key: Name, Value: !Sub "${AWS::StackName}-NAT-GW" }]
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-NAT-GW"
 
-  # 5. Route Tables
+  # --- Route Tables ---
   PublicRouteTable:
     Type: AWS::EC2::RouteTable
     Properties:
       VpcId: !Ref VPC
-      Tags: [{ Key: Name, Value: !Sub "${AWS::StackName}-Public-RT" }]
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-Public-RT"
 
   PublicRoute:
     Type: AWS::EC2::Route
@@ -146,7 +176,9 @@ Resources:
     Type: AWS::EC2::RouteTable
     Properties:
       VpcId: !Ref VPC
-      Tags: [{ Key: Name, Value: !Sub "${AWS::StackName}-Private-RT" }]
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-Private-RT"
 
   PrivateRoute:
     Type: AWS::EC2::Route
@@ -167,58 +199,61 @@ Resources:
       SubnetId: !Ref PrivateSubnet2
       RouteTableId: !Ref PrivateRouteTable
 
-  # 6. Security Groups
+  # --- Security Groups ---
   WebSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
       VpcId: !Ref VPC
-      GroupName: Web-EC2-SG
-      GroupDescription: Allow HTTP and SSH to the web server
+      GroupDescription: Allow HTTP and SSH
       SecurityGroupIngress:
         - IpProtocol: tcp
-          FromPort: 80 # HTTP for the web application
+          FromPort: 80
           ToPort: 80
           CidrIp: 0.0.0.0/0
         - IpProtocol: tcp
           FromPort: 22
           ToPort: 22
-          CidrIp: 0.0.0.0/0 # Restrict this to your IP in production!
-      Tags: [{ Key: Name, Value: !Sub "${AWS::StackName}-Web-SG" }]
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-Web-SG"
 
   DBSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
       VpcId: !Ref VPC
-      GroupName: DB-RDS-SG
-      GroupDescription: Allow traffic only from the Web Security Group (Public Subnets)
+      GroupDescription: Allow DB access only from Web EC2
       SecurityGroupIngress:
         - IpProtocol: tcp
-          FromPort: 5432 # PostgreSQL default port
+          FromPort: 5432
           ToPort: 5432
-          SourceSecurityGroupId: !Ref WebSecurityGroup # CRITICAL: Only allow traffic from the EC2 tier
-      Tags: [{ Key: Name, Value: !Sub "${AWS::StackName}-DB-SG" }]
+          SourceSecurityGroupId: !Ref WebSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-DB-SG"
 
-  # 7. EC2 IAM Role (Must allow CodeDeploy access)
+  # --- IAM Role ---
   WebInstanceRole:
-    Type: 'AWS::IAM::Role'
+    Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
           - Effect: Allow
-            Principal: { Service: 'ec2.amazonaws.com' }
-            Action: 'sts:AssumeRole'
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
       ManagedPolicyArns:
-        # These policies allow the EC2 instance to be managed and communicate with CodeDeploy/S3
-        - 'arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore'
-        - 'arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforAWSCodeDeploy'
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+        - arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforAWSCodeDeploy
 
   WebInstanceProfile:
-    Type: 'AWS::IAM::InstanceProfile'
+    Type: AWS::IAM::InstanceProfile
     Properties:
-      Roles: [!Ref WebInstanceRole]
+      Roles:
+        - !Ref WebInstanceRole
 
-  # 8. EC2 Instance (Frontend/Backend)
+  # --- EC2 Instance ---
   WebServer:
     Type: AWS::EC2::Instance
     Properties:
@@ -226,12 +261,13 @@ Resources:
       ImageId: !Ref LatestAmiId
       KeyName: !Ref KeyName
       SubnetId: !Ref PublicSubnet1
-      SecurityGroupIds: [!Ref WebSecurityGroup]
+      SecurityGroupIds:
+        - !Ref WebSecurityGroup
       AssociatePublicIpAddress: true
       IamInstanceProfile: !Ref WebInstanceProfile
-      Tags: [{ Key: Name, Value: !Sub "${AWS::StackName}-WebServer-Backend" }]
-      
-      # UserData for Python backend setup & CodeDeploy Agent installation
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-WebServer"
       UserData:
         Fn::Base64:
           Fn::Sub:
@@ -241,24 +277,21 @@ Resources:
               # 1. Install necessary dependencies (needed before CodeDeploy takes over)
               yum update -y
               amazon-linux-extras install python3.8 -y
-              yum install -y postgresql-devel gcc
+              yum install -y postgresql-devel gcc ruby wget
               pip3 install flask gunicorn psycopg2-binary passlib
               
               # --- Install CodeDeploy Agent (CRITICAL for CI/CD) ---
-              yum install -y ruby
               wget https://aws-codedeploy-${AWS::Region}.s3.${AWS::Region}.amazonaws.com/latest/install
-              chmod +x ./install
-              ./install auto
-              service codedeploy-agent status
+              chmod +x install && ./install auto
               
-              # 2. Set up environment variables for the DB connection
-              # Variables are now resolved using the map block below to satisfy Fn::Sub naming rules.
+              # 2. Set up environment variables for the DB connection (uses placeholders from the map below)
               export DB_ENDPOINT="${DBEndpoint}"
               export DB_USERNAME="${DBUsername}"
               export DB_PASSWORD="${DBPassword}"
               export DB_NAME="${DBName}"
               export DB_PORT="${DBPort}"
-
+              echo "DB env vars set successfully"
+              
               # 3. Create the Python backend application (app.py)
               cat << 'EOF' > /home/ec2-user/app.py
               import os
@@ -376,6 +409,7 @@ Resources:
                           return jsonify({"message": f"Login successful for {email}"}), 200
                       else:
                           return jsonify({"error": "Invalid credentials"}), 401
+                      
                   else:
                       return jsonify({"error": "Invalid credentials"}), 401
 
@@ -542,6 +576,7 @@ Resources:
 
               # 5. Start the Gunicorn server on port 80
               # We run the app directly on port 80 using gunicorn for initial bootstrapping.
+              # Note: In a real environment, this should be handled by a service manager (e.g., systemd).
               /usr/local/bin/gunicorn3 --bind 0.0.0.0:80 app:app --daemon
 
               # 6. Set appropriate permissions
@@ -554,15 +589,17 @@ Resources:
               DBName: !Ref DBName
               DBPort: !GetAtt RDSInstance.Endpoint.Port
 
-  # 8. RDS Database (Backend)
+  # --- RDS ---
   DBSecurityGroupSubnetGroup:
     Type: AWS::RDS::DBSubnetGroup
     Properties:
-      DBSubnetGroupDescription: Subnets for RDS instance
+      DBSubnetGroupDescription: Subnets for RDS
       SubnetIds:
         - !Ref PrivateSubnet1
         - !Ref PrivateSubnet2
-      Tags: [{ Key: Name, Value: !Sub "${AWS::StackName}-DB-Subnet-Group" }]
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-DB-SubnetGroup"
 
   RDSInstance:
     Type: AWS::RDS::DBInstance
@@ -574,12 +611,21 @@ Resources:
       DBName: !Ref DBName
       AllocatedStorage: !Ref DBAllocatedStorage
       DBSubnetGroupName: !Ref DBSecurityGroupSubnetGroup
-      VPCSecurityGroups: [!Ref DBSecurityGroup]
+      VPCSecurityGroups:
+        - !Ref DBSecurityGroup
       MultiAZ: false
       PubliclyAccessible: false
 
 Outputs:
-  VPCId: { Value: !Ref VPC, Description: The VPC ID }
-  WebInstancePublicIP: { Value: !GetAtt WebServer.PublicIp, Description: Public IP of the Web Server (EC2) }
-  DBEndpoint: { Value: !GetAtt RDSInstance.Endpoint.Address, Description: RDS Endpoint for application configuration }
-  DBPort: { Value: !GetAtt RDSInstance.Endpoint.Port, Description: RDS Port }
+  VPCId:
+    Description: VPC ID
+    Value: !Ref VPC
+  WebInstancePublicIP:
+    Description: Public IP of the EC2 instance
+    Value: !GetAtt WebServer.PublicIp
+  DBEndpoint:
+    Description: RDS Endpoint
+    Value: !GetAtt RDSInstance.Endpoint.Address
+  DBPort:
+    Description: RDS Port
+    Value: !GetAtt RDSInstance.Endpoint.Port
