@@ -1,21 +1,21 @@
 version: 0.0
 os: linux
 files:
-  - source: /app/
-    destination: /home/ec2-user/app
-permissions:
-  - object: /home/ec2-user/app
-    pattern: "**"
-    owner: ec2-user
-    group: ec2-user
+  - source: /
+    destination: /var/www/app/
 hooks:
-  BeforeInstall:
-    # Ensure the directory exists and install python dependencies before deployment
-    - location: deployment/scripts/install_dependencies.sh
-      timeout: 300
+  ApplicationStop:
+    - location: scripts/stop_app.sh
+      timeout: 60
       runas: root
   ApplicationStart:
-    # Start the application server
-    - location: app/start_app.sh
+    - location: scripts/start_app.sh
       timeout: 60
-      runas: ec2-user
+      runas: root
+```
+
+### C. Necessary CloudFormation Adjustment
+
+To fully shift to a CI/CD model, the **`poc-infra.yaml`** file's `UserData` script must be edited to **remove** the `cat << 'EOF' ...` blocks that create the application files (`app.py`, `index.html`) and the database initialization command (`python3 /var/www/app/app.py`). These actions will be handled by the deployment package instead.
+
+We can now move on to creating the **CI/CD pipeline**!
