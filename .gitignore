@@ -1,0 +1,50 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Logs and databases
+logs/
+*.log
+*.sqlite3
+
+# Python tooling
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+
+# Node (in case frontend assets are added later)
+node_modules/
+
+# Python packaging
+build/
+dist/
+*.egg-info/
+
+# IDE/editor
+.vscode/
+.idea/
+
+# Environment files
+*.env
+.env.*
+
+# Artifacts
+artifacts/
+release.zip
+
+# AWS/CD tools
+.codedeploy/
+.aws-sam/

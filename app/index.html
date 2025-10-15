@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PoC Web App: Login & Signup</title>
+    <!-- Load Tailwind CSS for quick, professional styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom styles for the PoC */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f7f9fb;
+        }
+    </style>
+</head>
+<body class="flex items-center justify-center min-h-screen p-4">
+    <div class="w-full max-w-md bg-white p-8 rounded-xl shadow-2xl border border-gray-100">
+        <div class="flex justify-center mb-6">
+            <h1 id="title" class="text-3xl font-extrabold text-indigo-700">Login</h1>
+        </div>
+
+        <div id="message-box" class="hidden bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4" role="alert">
+            <span class="block sm:inline" id="alert-text"></span>
+        </div>
+
+        <form id="auth-form" class="space-y-6">
+            <div>
+                <label for="email" class="block text-sm font-medium text-gray-700">Email Address</label>
+                <input type="email" id="email" name="email" required
+                       class="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500 transition duration-150 ease-in-out">
+            </div>
+
+            <div>
+                <label for="password" class="block text-sm font-medium text-gray-700">Password</label>
+                <input type="password" id="password" name="password" required minlength="8"
+                       class="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500 transition duration-150 ease-in-out">
+                <p class="text-xs text-gray-500 mt-1">Minimum 8 characters.</p>
+            </div>
+
+            <div>
+                <button type="submit" id="submit-button"
+                        class="w-full flex justify-center py-2 px-4 border border-transparent rounded-lg shadow-lg text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition duration-300 ease-in-out">
+                    Log In
+                </button>
+            </div>
+        </form>
+
+        <div class="mt-6 text-center">
+            <button id="toggle-button" class="text-sm text-indigo-600 hover:text-indigo-800 transition duration-150 ease-in-out">
+                Need an account? Sign Up
+            </button>
+        </div>
+    </div>
+
+    <script>
+        // NOTE: This script now makes real AJAX calls to the backend on the EC2 instance.
+        const form = document.getElementById('auth-form');
+        const title = document.getElementById('title');
+        const submitButton = document.getElementById('submit-button');
+        const toggleButton = document.getElementById('toggle-button');
+        const messageBox = document.getElementById('message-box');
+        const alertText = document.getElementById('alert-text');
+        let isLogin = true;
+
+        const showMessage = (message, isError = true) => {
+            alertText.textContent = message;
+            messageBox.classList.remove('hidden');
+            messageBox.className = `bg-${isError ? 'red' : 'green'}-100 border border-${isError ? 'red' : 'green'}-400 text-${isError ? 'red' : 'green'}-700 px-4 py-3 rounded mb-4`;
+            setTimeout(() => {
+                messageBox.classList.add('hidden');
+            }, 5000);
+        };
+
+        const toggleMode = () => {
+            isLogin = !isLogin;
+            title.textContent = isLogin ? 'Login' : 'Sign Up';
+            submitButton.textContent = isLogin ? 'Log In' : 'Create Account';
+            toggleButton.textContent = isLogin ? 'Need an account? Sign Up' : 'Already have an account? Log In';
+        };
+
+        const handleFormSubmit = async (event) => {
+            event.preventDefault();
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+
+            if (password.length < 8) {
+                showMessage("Password must be at least 8 characters long.", true);
+                return;
+            }
+
+            // Endpoints point to the Flask application routes
+            const endpoint = isLogin ? '/login' : '/signup';
+            
+            submitButton.disabled = true;
+            submitButton.textContent = isLogin ? 'Processing...' : 'Processing...';
+
+            try {
+                const response = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ email, password })
+                });
+
+                const result = await response.json();
+                
+                if (response.ok) {
+                    if (isLogin) {
+                        showMessage(result.message, false);
+                    } else {
+                        showMessage(result.message + " Switching to Login.", false);
+                        toggleMode(); // Switch to login after successful signup
+                    }
+                    form.reset();
+                } else {
+                    // Backend returns 4xx/5xx status codes with an 'error' field
+                    showMessage(`[${response.status}] ${result.error || 'Request failed'}`, true);
+                }
+
+            } catch (error) {
+                console.error("Fetch error:", error);
+                showMessage("Could not connect to the backend server.", true);
+            } finally {
+                submitButton.disabled = false;
+                submitButton.textContent = isLogin ? 'Log In' : 'Create Account';
+            }
+        };
+
+        toggleButton.addEventListener('click', toggleMode);
+        form.addEventListener('submit', handleFormSubmit);
+
+        // Pre-load Tailwind classes
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    },
+                },
+            }
+        }
+    </script>
+</body>
+</html>

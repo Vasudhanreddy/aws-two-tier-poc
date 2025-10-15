@@ -1,0 +1,8 @@
+#!/bin/bash
+
+# Navigate to the target deployment location
+cd /home/ec2-user/app
+
+# Update pip and install required Python packages from the requirements.txt file
+/usr/local/bin/pip3 install --upgrade pip
+/usr/local/bin/pip3 install -r requirements.txt

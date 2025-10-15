@@ -1,0 +1,574 @@
+Description: |
+  AWS CloudFormation Template for a two-tier Proof-of-Concept (PoC) architecture.
+  This template deploys a VPC with two public and two private subnets, an EC2 Web Instance
+  (Public Subnet) running a Python backend, and an RDS PostgreSQL instance (Private Subnets).
+
+Parameters:
+  VpcCidr:
+    Type: String
+    Default: 10.0.0.0/16
+    Description: CIDR block for the VPC.
+  
+  # --- Network Configuration Parameters ---
+  PublicSubnet1Cidr: { Type: String, Default: 10.0.1.0/24 }
+  PublicSubnet2Cidr: { Type: String, Default: 10.0.2.0/24 }
+  PrivateSubnet1Cidr: { Type: String, Default: 10.0.11.0/24 }
+  PrivateSubnet2Cidr: { Type: String, Default: 10.0.12.0/24 }
+
+  # --- EC2 Parameters (Frontend Web Server) ---
+  InstanceType:
+    Type: String
+    Default: t3.micro
+    Description: EC2 instance type for the web server.
+  LatestAmiId:
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Default: '/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2'
+    Description: Amazon Linux 2 AMI ID from SSM Parameter Store.
+  KeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: Name of an existing EC2 KeyPair to enable SSH access to the Web Server.
+
+  # --- RDS Parameters (Private Database) ---
+  DBInstanceIdentifier: { Type: String, Default: app-poc-db }
+  DBUsername: { Type: String, Default: masteruser }
+  DBPassword:
+    Type: String
+    NoEcho: true
+    Description: Master password for the database.
+  DBInstanceType: { Type: String, Default: db.t3.micro }
+  DBAllocatedStorage: { Type: Number, Default: 20 }
+  DBName: { Type: String, Default: pocdb } # Added DB Name for connection
+
+# Mappings (Used to dynamically get AZ names)
+Mappings:
+  RegionMap:
+    us-east-1:
+      AZ1: us-east-1a
+      AZ2: us-east-1b
+    # Add other regions as needed
+
+Resources:
+  # 1. VPC and Networking (Routes, Subnets, etc. remain the same)
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCidr
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags: [{ Key: Name, Value: !Sub "${AWS::StackName}-VPC" }]
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags: [{ Key: Name, Value: !Sub "${AWS::StackName}-IGW" }]
+
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  # 2. Public Subnets
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PublicSubnet1Cidr
+      AvailabilityZone: !Select [0, !GetAZs '']
+      Tags: [{ Key: Name, Value: !Sub "${AWS::StackName}-Public-1" }]
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PublicSubnet2Cidr
+      AvailabilityZone: !Select [1, !GetAZs '']
+      Tags: [{ Key: Name, Value: !Sub "${AWS::StackName}-Public-2" }]
+
+  # 3. Private Subnets
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PrivateSubnet1Cidr
+      AvailabilityZone: !Select [0, !GetAZs '']
+      Tags: [{ Key: Name, Value: !Sub "${AWS::StackName}-Private-1" }]
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PrivateSubnet2Cidr
+      AvailabilityZone: !Select [1, !GetAZs '']
+      Tags: [{ Key: Name, Value: !Sub "${AWS::StackName}-Private-2" }]
+
+  # 4. NAT Gateway and EIP
+  NatGatewayEIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+
+  NatGateway:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatGatewayEIP.AllocationId
+      SubnetId: !Ref PublicSubnet1
+      Tags: [{ Key: Name, Value: !Sub "${AWS::StackName}-NAT-GW" }]
+
+  # 5. Route Tables
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags: [{ Key: Name, Value: !Sub "${AWS::StackName}-Public-RT" }]
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet2
+      RouteTableId: !Ref PublicRouteTable
+
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags: [{ Key: Name, Value: !Sub "${AWS::StackName}-Private-RT" }]
+
+  PrivateRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway
+
+  PrivateSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet1
+      RouteTableId: !Ref PrivateRouteTable
+
+  PrivateSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet2
+      RouteTableId: !Ref PrivateRouteTable
+
+  # 6. Security Groups
+  WebSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref VPC
+      GroupName: Web-EC2-SG
+      GroupDescription: Allow HTTP and SSH to the web server
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80 # HTTP for the web application
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0 # Restrict this to your IP in production!
+      Tags: [{ Key: Name, Value: !Sub "${AWS::StackName}-Web-SG" }]
+
+  DBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref VPC
+      GroupName: DB-RDS-SG
+      GroupDescription: Allow traffic only from the Web Security Group (Public Subnets)
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5432 # PostgreSQL default port
+          ToPort: 5432
+          SourceSecurityGroupId: !Ref WebSecurityGroup # CRITICAL: Only allow traffic from the EC2 tier
+      Tags: [{ Key: Name, Value: !Sub "${AWS::StackName}-DB-SG" }]
+
+  # 7. EC2 IAM Role
+  WebInstanceRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: 'ec2.amazonaws.com' }
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore' # Good for troubleshooting
+
+  WebInstanceProfile:
+    Type: 'AWS::IAM::InstanceProfile'
+    Properties:
+      Roles: [!Ref WebInstanceRole]
+
+  # 8. EC2 Instance (Frontend/Backend)
+  WebServer:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref InstanceType
+      ImageId: !Ref LatestAmiId
+      KeyName: !Ref KeyName
+      SubnetId: !Ref PublicSubnet1
+      SecurityGroupIds: [!Ref WebSecurityGroup]
+      AssociatePublicIpAddress: true
+      IamInstanceProfile: !Ref WebInstanceProfile
+      Tags: [{ Key: Name, Value: !Sub "${AWS::StackName}-WebServer-Backend" }]
+      
+      # UserData for Python backend setup (installs dependencies, configures DB connection, runs app)
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash -xe
+          
+          # 1. Install necessary dependencies
+          yum update -y
+          amazon-linux-extras install python3.8 -y
+          yum install -y postgresql-devel gcc
+          pip3 install flask gunicorn psycopg2-binary passlib
+          
+          # 2. Set up environment variables for the DB connection
+          export DB_ENDPOINT="!GetAtt RDSInstance.Endpoint.Address"
+          export DB_USERNAME="!Ref DBUsername"
+          export DB_PASSWORD="!Ref DBPassword"
+          export DB_NAME="!Ref DBName"
+          export DB_PORT="!GetAtt RDSInstance.Endpoint.Port"
+
+          # 3. Create the Python backend application (app.py)
+          cat << 'EOF' > /home/ec2-user/app.py
+          import os
+          import json
+          import psycopg2
+          from flask import Flask, request, jsonify
+          from passlib.hash import pbkdf2_sha256
+
+          # --- Configuration from Environment Variables ---
+          DB_ENDPOINT = os.environ.get("DB_ENDPOINT")
+          DB_NAME = os.environ.get("DB_NAME")
+          DB_USER = os.environ.get("DB_USERNAME")
+          DB_PASS = os.environ.get("DB_PASSWORD")
+          DB_PORT = os.environ.get("DB_PORT")
+          
+          app = Flask(__name__)
+
+          def get_db_connection():
+              """Establishes a connection to the PostgreSQL database."""
+              try:
+                  conn = psycopg2.connect(
+                      host=DB_ENDPOINT,
+                      database=DB_NAME,
+                      user=DB_USER,
+                      password=DB_PASS,
+                      port=DB_PORT
+                  )
+                  return conn
+              except Exception as e:
+                  print(f"Database connection error: {e}")
+                  return None
+
+          def initialize_db():
+              """Creates the 'users' table if it does not exist."""
+              conn = get_db_connection()
+              if conn:
+                  try:
+                      cursor = conn.cursor()
+                      # Using UUID for id is standard, but simplified here for PoC
+                      cursor.execute("""
+                          CREATE TABLE IF NOT EXISTS users (
+                              id SERIAL PRIMARY KEY,
+                              email VARCHAR(255) UNIQUE NOT NULL,
+                              password_hash VARCHAR(255) NOT NULL
+                          );
+                      """)
+                      conn.commit()
+                      cursor.close()
+                  except Exception as e:
+                      print(f"Database initialization error: {e}")
+                  finally:
+                      conn.close()
+
+          @app.route('/signup', methods=['POST'])
+          def signup():
+              data = request.json
+              email = data.get('email')
+              password = data.get('password')
+
+              if not email or not password:
+                  return jsonify({"error": "Email and password required"}), 400
+
+              # Hash the password securely
+              password_hash = pbkdf2_sha256.hash(password)
+              
+              conn = get_db_connection()
+              if not conn:
+                  return jsonify({"error": "Database unavailable"}), 503
+
+              try:
+                  cursor = conn.cursor()
+                  cursor.execute(
+                      "INSERT INTO users (email, password_hash) VALUES (%s, %s)",
+                      (email, password_hash)
+                  )
+                  conn.commit()
+                  cursor.close()
+                  return jsonify({"message": "User created successfully"}), 201
+              except psycopg2.errors.UniqueViolation:
+                  conn.rollback()
+                  return jsonify({"error": "User already exists"}), 409
+              except Exception as e:
+                  conn.rollback()
+                  print(f"Signup error: {e}")
+                  return jsonify({"error": "Internal server error"}), 500
+              finally:
+                  conn.close()
+
+          @app.route('/login', methods=['POST'])
+          def login():
+              data = request.json
+              email = data.get('email')
+              password = data.get('password')
+
+              conn = get_db_connection()
+              if not conn:
+                  return jsonify({"error": "Database unavailable"}), 503
+              
+              user_data = None
+              try:
+                  cursor = conn.cursor()
+                  cursor.execute("SELECT password_hash FROM users WHERE email = %s", (email,))
+                  user_data = cursor.fetchone()
+                  cursor.close()
+              except Exception as e:
+                  print(f"Login database error: {e}")
+                  return jsonify({"error": "Internal server error"}), 500
+              finally:
+                  conn.close()
+
+              if user_data:
+                  stored_hash = user_data[0]
+                  # Verify the password against the stored hash
+                  if pbkdf2_sha256.verify(password, stored_hash):
+                      return jsonify({"message": f"Login successful for {email}"}), 200
+                  else:
+                      return jsonify({"error": "Invalid credentials"}), 401
+              else:
+                  return jsonify({"error": "Invalid credentials"}), 401
+
+
+          # Serve the static HTML frontend
+          @app.route('/')
+          def serve_frontend():
+              try:
+                  # NOTE: The index.html needs to be placed in the same directory by the script
+                  with open('index.html', 'r') as f:
+                      return f.read()
+              except FileNotFoundError:
+                  return "Frontend file not found. Please ensure index.html is in /home/ec2-user/", 500
+
+          # Initialize the database table structure when the app starts
+          initialize_db()
+
+          # For simplicity in this PoC, we run the app directly on port 80 using gunicorn. 
+          # In production, this would be behind a reverse proxy (Nginx/Apache).
+          # The gunicorn command below is what we will run via the startup script.
+
+          if __name__ == '__main__':
+              app.run(host='0.0.0.0', port=5000)
+
+          EOF
+          
+          # 4. Copy the frontend code (index.html) into the app directory
+          # NOTE: You will need to SSH in and replace this content with the actual index.html file 
+          # that you put on GitHub. For the PoC, we will embed the updated index.html content here.
+          
+          cat << 'FRONTEND_EOF' > /home/ec2-user/index.html
+          <!DOCTYPE html>
+          <html lang="en">
+          <head>
+              <meta charset="UTF-8">
+              <meta name="viewport" content="width=device-width, initial-scale=1.0">
+              <title>PoC Web App: Login & Signup</title>
+              <!-- Load Tailwind CSS for quick, professional styling -->
+              <script src="https://cdn.tailwindcss.com"></script>
+              <style>
+                  body {
+                      font-family: 'Inter', sans-serif;
+                      background-color: #f7f9fb;
+                  }
+              </style>
+          </head>
+          <body class="flex items-center justify-center min-h-screen p-4">
+              <div class="w-full max-w-md bg-white p-8 rounded-xl shadow-2xl border border-gray-100">
+                  <div class="flex justify-center mb-6">
+                      <h1 id="title" class="text-3xl font-extrabold text-indigo-700">Login</h1>
+                  </div>
+
+                  <div id="message-box" class="hidden bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4" role="alert">
+                      <span class="block sm:inline" id="alert-text"></span>
+                  </div>
+
+                  <form id="auth-form" class="space-y-6">
+                      <div>
+                          <label for="email" class="block text-sm font-medium text-gray-700">Email Address</label>
+                          <input type="email" id="email" name="email" required
+                                 class="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500 transition duration-150 ease-in-out">
+                      </div>
+
+                      <div>
+                          <label for="password" class="block text-sm font-medium text-gray-700">Password</label>
+                          <input type="password" id="password" name="password" required minlength="8"
+                                 class="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500 transition duration-150 ease-in-out">
+                          <p class="text-xs text-gray-500 mt-1">Minimum 8 characters.</p>
+                      </div>
+
+                      <div>
+                          <button type="submit" id="submit-button"
+                                  class="w-full flex justify-center py-2 px-4 border border-transparent rounded-lg shadow-lg text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition duration-300 ease-in-out">
+                              Log In
+                          </button>
+                      </div>
+                  </form>
+
+                  <div class="mt-6 text-center">
+                      <button id="toggle-button" class="text-sm text-indigo-600 hover:text-indigo-800 transition duration-150 ease-in-out">
+                          Need an account? Sign Up
+                      </button>
+                  </div>
+              </div>
+
+              <script>
+                  const form = document.getElementById('auth-form');
+                  const title = document.getElementById('title');
+                  const submitButton = document.getElementById('submit-button');
+                  const toggleButton = document.getElementById('toggle-button');
+                  const messageBox = document.getElementById('message-box');
+                  const alertText = document.getElementById('alert-text');
+                  let isLogin = true;
+
+                  const showMessage = (message, isError = true) => {
+                      alertText.textContent = message;
+                      messageBox.classList.remove('hidden');
+                      messageBox.className = `bg-${isError ? 'red' : 'green'}-100 border border-${isError ? 'red' : 'green'}-400 text-${isError ? 'red' : 'green'}-700 px-4 py-3 rounded mb-4`;
+                      setTimeout(() => {
+                          messageBox.classList.add('hidden');
+                      }, 5000);
+                  };
+
+                  const toggleMode = () => {
+                      isLogin = !isLogin;
+                      title.textContent = isLogin ? 'Login' : 'Sign Up';
+                      submitButton.textContent = isLogin ? 'Log In' : 'Create Account';
+                      toggleButton.textContent = isLogin ? 'Need an account? Sign Up' : 'Already have an account? Log In';
+                  };
+
+                  const handleFormSubmit = async (event) => {
+                      event.preventDefault();
+                      const email = document.getElementById('email').value;
+                      const password = document.getElementById('password').value;
+
+                      const endpoint = isLogin ? '/login' : '/signup';
+                      
+                      submitButton.disabled = true;
+                      submitButton.textContent = isLogin ? 'Processing...' : 'Processing...';
+
+                      try {
+                          const response = await fetch(endpoint, {
+                              method: 'POST',
+                              headers: {
+                                  'Content-Type': 'application/json'
+                              },
+                              body: JSON.stringify({ email, password })
+                          });
+
+                          const result = await response.json();
+                          
+                          if (response.ok) {
+                              if (isLogin) {
+                                  showMessage(result.message, false);
+                                  // Optionally redirect or show dashboard
+                              } else {
+                                  showMessage(result.message + " Switching to Login.", false);
+                                  toggleMode(); // Switch to login after successful signup
+                              }
+                              form.reset();
+                          } else {
+                              showMessage(`[${response.status}] ${result.error || 'Request failed'}`, true);
+                          }
+
+                      } catch (error) {
+                          console.error("Fetch error:", error);
+                          showMessage("Could not connect to the backend server.", true);
+                      } finally {
+                          submitButton.disabled = false;
+                          submitButton.textContent = isLogin ? 'Log In' : 'Create Account';
+                      }
+                  };
+
+                  toggleButton.addEventListener('click', toggleMode);
+                  form.addEventListener('submit', handleFormSubmit);
+
+                  tailwind.config = {
+                      theme: {
+                          extend: {
+                              fontFamily: {
+                                  sans: ['Inter', 'sans-serif'],
+                              },
+                          },
+                      }
+                  }
+              </script>
+          </body>
+          </html>
+          FRONTEND_EOF
+
+          # 5. Start the Gunicorn server on port 80
+          # We use 'sudo' to bind to port 80
+          # The app.py file imports the index.html file to serve the frontend on the root path '/'
+          /usr/local/bin/gunicorn3 --bind 0.0.0.0:80 app:app --daemon
+
+          # 6. Set appropriate permissions
+          chown -R ec2-user:ec2-user /home/ec2-user
+          
+          echo "Backend application setup complete and running on port 80." > /tmp/setup_status.txt
+
+  # 8. RDS Database (Backend)
+  DBSecurityGroupSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Subnets for RDS instance
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      Tags: [{ Key: Name, Value: !Sub "${AWS::StackName}-DB-Subnet-Group" }]
+
+  RDSInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBInstanceClass: !Ref DBInstanceType
+      Engine: postgres
+      MasterUsername: !Ref DBUsername
+      MasterUserPassword: !Ref DBPassword
+      DBName: !Ref DBName
+      AllocatedStorage: !Ref DBAllocatedStorage
+      DBSubnetGroupName: !Ref DBSecurityGroupSubnetGroup
+      VPCSecurityGroups: [!Ref DBSecurityGroup]
+      MultiAZ: false
+      PubliclyAccessible: false
+
+Outputs:
+  VPCId: { Value: !Ref VPC, Description: The VPC ID }
+  WebInstancePublicIP: { Value: !GetAtt WebServer.PublicIp, Description: Public IP of the Web Server (EC2) }
+  DBEndpoint: { Value: !GetAtt RDSInstance.Endpoint.Address, Description: RDS Endpoint for application configuration }
+  DBPort: { Value: !GetAtt RDSInstance.Endpoint.Port, Description: RDS Port }
