@@ -1,4 +1,4 @@
-# My Web App POC
+# aws-two-tier-poc
 
 A minimal Flask + Gunicorn web app with AWS-ready CI/CD using CodeBuild and CodeDeploy. Includes a CloudFormation template (`poc-infra.yaml`) to spin up an EC2-based environment.
 
