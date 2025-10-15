@@ -250,7 +250,6 @@ Resources:
           service codedeploy-agent status
           
           # 2. Set up environment variables for the DB connection
-          # FIX: Using proper !Sub variable syntax to avoid template error
           export DB_ENDPOINT="${RDSInstance.Endpoint.Address}"
           export DB_USERNAME="${DBUsername}"
           export DB_PASSWORD="${DBPassword}"
