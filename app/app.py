@@ -121,12 +121,22 @@ def login():
     else:
         return jsonify({"error": "Invalid credentials"}), 401
 
+# @app.route('/')
+# def serve_frontend():
+#     """Serves the frontend file."""
+#     try:
+#         with open('index.html', 'r') as f:
+#             return f.read()
+#     except FileNotFoundError:
+#         return "Frontend file not found. Ensure index.html is in the application directory.", 500
+
 @app.route('/')
 def serve_frontend():
-    """Serves the frontend file."""
+    """Serves the frontend file securely."""
     try:
-        with open('index.html', 'r') as f:
-            return f.read()
+        # Use the application's root path and the current directory (.)
+        # to safely serve index.html
+        return send_from_directory(app.root_path, 'index.html')
     except FileNotFoundError:
         return "Frontend file not found. Ensure index.html is in the application directory.", 500
 
